@@ -12,7 +12,9 @@
 #define PORT 5544
 
 int main () {
-    printf("starting...\r\n");
+    printf("starting...\n");
+    
+    /* initialize variables */
     uint32_t * last_addr;
     uint16_t * last_port;
     char buf[sizeof(*last_addr) + sizeof(*last_port)];
@@ -21,12 +23,14 @@ int main () {
     last_addr   = (uint32_t *) (buf          );
     last_port   = (uint16_t *) (last_addr + 1);
 
+    /* open socket */
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0) {
         printf("socket not avaliable");
         return -1;
     }
 
+    /* bind socket */
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family      = AF_INET;
@@ -39,19 +43,20 @@ int main () {
         return -1;
     }
 
+    /* initialize client variables */
     struct sockaddr_in client_a, client_b;
-    
     socklen_t client_a_len;
     socklen_t client_b_len;
     client_a_len = sizeof(struct sockaddr_in);
     client_b_len = sizeof(struct sockaddr_in);
 
-    char client_connection_key_a[4097];
-    char client_connection_key_b[4097];
+    char client_connection_key_a[256];
+    char client_connection_key_b[256];
 
-    printf("ready\r\n");
+    printf("ready\n");
 
     for(;;) {
+        /* reset client information */
         memset(&client_a, 0, sizeof(client_a));
         memset(&client_b, 0, sizeof(client_a));
 
@@ -60,19 +65,25 @@ int main () {
         memset(&client_connection_key_a, 0, sizeof(client_connection_key_a));
         memset(&client_connection_key_b, 0, sizeof(client_connection_key_b));
 
+        /* receive packets*/
         recvfrom(socket_fd, (char *) client_connection_key_a, 4097, 
             MSG_WAITALL, (struct sockaddr *) &client_a, 
                 &client_a_len);
 
+        /* fill client information */
         *last_addr = client_a.sin_addr.s_addr;
         *last_port = client_a.sin_port;
 
-        for(int iter = 0; iter < 10000; iter++) {
+        /* wait for a packet that matches. will loop for 10 seconds */
+        for(int iter = 0; iter < 1000000; iter++) {
+            /* receive potential matching packet */
             recvfrom(socket_fd, (char *) client_connection_key_b, 4097,
                 MSG_DONTWAIT, (struct sockaddr *) &client_b,
                     &client_b_len);
 
+            /* compare their connection keys */
             if (strcmp(client_connection_key_a, client_connection_key_b) == 0) {
+                /* if it matches send the client information */
                 sendto(socket_fd, buf, sizeof(buf),
                     0, (const struct sockaddr *) &client_b, 
                         client_b_len);
@@ -84,9 +95,18 @@ int main () {
                     0, (const struct sockaddr *) &client_a, 
                         client_a_len);
 
+                /* send roles for the client that will make the AES key and the one who will make the RSA key */
+                sendto(socket_fd, "a", 1,
+                    0, (const struct sockaddr *) &client_a, 
+                        client_a_len);
+
+                sendto(socket_fd, "b", 1,
+                    0, (const struct sockaddr *) &client_b, 
+                        client_b_len);
+
                 goto end;
             }
-            sleep(0.01);
+            sleep(0.00001);
         }
         end:
     }
