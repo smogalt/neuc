@@ -23,7 +23,7 @@
 #define SERVER_PORT 5544
 #define MAX_LEN 256
 
-struct print_data {
+struct func_data {
     WINDOW * output_win;
     int socket_fd;
     unsigned char aes_key[32];
@@ -41,7 +41,7 @@ void win_reset (WINDOW * win);
 void print_msg (WINDOW * win, char message[], bool sender);
 
 /* random string generator */
-void rand_string(unsigned char * srng, int len);
+void gen_rand_str (unsigned char * rand_str, int len);
 
 /* recieve messages from other client */
 void * recv_msg (void * data);
@@ -55,43 +55,56 @@ int main () {
     initscr();
     refresh();
 
+    /* init window vars */
     WINDOW *text_box;
     WINDOW *messages;
     
+    /* input options */
     keypad(stdscr, TRUE);
     cbreak();
-
+    
+    /* make window borders */
     text_box = newwin(3, COLS, (LINES - 3), 0);
     messages = newwin((LINES - 3), COLS, 0, 0);
     
+    /* screen options */
     scrollok(messages, TRUE);
-
+    
+    /* reset boxes */
     win_reset(text_box);
     win_reset(messages);
     
     /* seed rand() */
     srand(time(NULL));
     
-    /* init encryption */
-    rsa_key r_key;
+    /* init encryption vars */
+    rsa_key rsa_key;
     symmetric_CTR ctr;
-    unsigned char key_der[270], aes_key[32], aes_IV[32], aes_key_enc[256], aes_IV_enc[256];
-    unsigned long key_der_len = sizeof(key_der), aes_key_len = sizeof(aes_key), aes_key_enc_len = sizeof(aes_key_enc);
+    hash_state sha256;
     int hash_idx, prng_idx, res;
+    
+    unsigned char rsa_key_der[270];
+    unsigned long rsa_key_der_len = sizeof(rsa_key_der);
+    
+    unsigned char aes_key[32], aes_key_enc[256], aes_IV[32], aes_IV_enc[256];
+    unsigned long aes_key_len = sizeof(aes_key), aes_key_enc_len = sizeof(aes_key_enc);
 
-    /* register prng/hash */
+    /* init TFM variables */
     register_prng(&sprng_desc);
     
-    /* register a math library (in this case TomsFastMath) */
+    /* register a math library (TomsFastMath)*/
     ltc_mp = tfm_desc;
-    register_hash(&sha1_desc);
-    hash_idx = find_hash("sha1");
+    
+    register_hash(&sha256_desc);
+    hash_idx = find_hash("sha256");
     prng_idx = find_prng("sprng");
-   
-	register_cipher(&aes_desc);
+	
+    register_cipher(&aes_desc);
 
-    /* generate port*/
-    int my_port = rand() % 16383 + 49152;
+    sha256_init(&sha256);
+
+    /* generate port between 49152 and 65535 */
+    int localhost_port = rand() % 16383 + 49152;
 
     /* variables to hold client data from server */
     uint32_t * last_addr;
@@ -106,9 +119,9 @@ int main () {
     char server_ip[16];
     char role[1];
 	
-    struct sockaddr_in serv_addr, my_addr;
+    struct sockaddr_in serv_addr, localhost_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
-    memset(&serv_addr, 0, sizeof(my_addr));
+    memset(&serv_addr, 0, sizeof(localhost_addr));
 
     /* get the server address and the connection key */
     mvwprintw(text_box, 1, 1, "server ip: ");
@@ -119,6 +132,9 @@ int main () {
     wscanw(text_box, "%s", connection_key);
     win_reset(text_box);
 
+    sha256_process(&sha256, connection_key, strlen(connection_key));
+    sha256_done(&sha256, connection_key);
+
     /* make socket */
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0) {
@@ -128,14 +144,14 @@ int main () {
     }
 
     /* bind socket and check to see if port is avaliable */
-    while (bind(socket_fd, (struct sockaddr *) &my_addr, sizeof(my_addr)) < 0) {
-        my_port = rand() % 16383 + 49152;
-        my_addr.sin_port = htons(my_port);
+    while (bind(socket_fd, (struct sockaddr *) &localhost_addr, sizeof(localhost_addr)) < 0) {
+        localhost_port = rand() % 16383 + 49152;
+        localhost_addr.sin_port = htons(localhost_port);
     };
 
     /* filling localhost info */
-    my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(my_port);
+    localhost_addr.sin_family = AF_INET;
+    localhost_addr.sin_port = htons(localhost_port);
 
     /* filling server info */
     serv_addr.sin_family = AF_INET;
@@ -167,13 +183,13 @@ int main () {
     client with the 'b' role that makes an AES key, then encrypts it and sends it back*/
     if (role[0] == 'a') {
         /* make a 2048 bit RSA key */
-        rsa_make_key(NULL, prng_idx, 2048/8, 65537, &r_key); 
+        rsa_make_key(NULL, prng_idx, 2048/8, 65537, &rsa_key); 
 
         /* export key */
-        rsa_export(key_der, &key_der_len, PK_PUBLIC, &r_key);
+        rsa_export(rsa_key_der, &rsa_key_der_len, PK_PUBLIC, &rsa_key);
 
         /* send exported key */
-        sendto (socket_fd, key_der, sizeof(key_der), 
+        sendto (socket_fd, rsa_key_der, sizeof(rsa_key_der), 
             MSG_CONFIRM, (struct sockaddr *) &remote, 
                 sizeof(remote));
         
@@ -191,36 +207,36 @@ int main () {
 
         /* decrypt AES key */
         if (rsa_decrypt_key (aes_key_enc, sizeof(aes_key_enc), aes_key, &aes_key_len, 
-            "neuc", 4, hash_idx, &res, &r_key) != CRYPT_OK)
+            "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
             print_msg(messages, "ERROR ON DECRYPTING AES KEY", false);
         
 		/* decrypt IV */
         if (rsa_decrypt_key (aes_IV_enc, sizeof(aes_IV_enc), aes_IV, &aes_key_len, 
-            "neuc", 4, hash_idx, &res, &r_key) != CRYPT_OK)
+            "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
             print_msg(messages, "ERROR ON DECRYPTING AES KEY", false);
     }
 
     if (role[0] == 'b') {
         /* recieve RSA public key */
-        recvfrom(socket_fd, key_der, sizeof(key_der),
+        recvfrom(socket_fd, rsa_key_der, sizeof(rsa_key_der),
             MSG_WAITALL, NULL,
                 NULL);
         
         /* import RSA key */
-        if (rsa_import (key_der, sizeof(key_der), &r_key) != CRYPT_OK)
+        if (rsa_import(rsa_key_der, sizeof(rsa_key_der), &rsa_key) != CRYPT_OK)
             print_msg(messages, "ERROR ON RSA IMPORT", false);
         
         /* generate random AES key and IV*/
-        rand_string(aes_key, 32);
-		rand_string(aes_IV, 32);
+        gen_rand_str(aes_key, 32);
+		gen_rand_str(aes_IV, 32);
         
         /* encrypt AES key */
         if (rsa_encrypt_key(aes_key, sizeof(aes_key), aes_key_enc, &aes_key_enc_len, 
-            "neuc", 4, NULL, prng_idx, hash_idx, &r_key) != CRYPT_OK)
+            "neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
             print_msg(messages, "ERROR ON ENCRYPTING AES KEY", false);
 
 		if (rsa_encrypt_key(aes_IV, sizeof(aes_IV), aes_IV_enc, &aes_key_enc_len,
-			"neuc", 4, NULL, prng_idx, hash_idx, &r_key) != CRYPT_OK)
+			"neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
 			print_msg(messages, "ERROR ON ENCRYPTING IV", false);
 
         /* send encrypted AES key back */
@@ -239,7 +255,7 @@ int main () {
 	ctr_start(find_cipher("aes"), aes_IV, aes_key, 32, 0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
 
     /* fill data for recv thread*/
-    struct print_data data;
+    struct func_data data;
     data.output_win = messages;
     data.socket_fd = socket_fd;
     for (int i = 0; i < 32; i++) {
@@ -292,7 +308,7 @@ int main () {
     
     /* clean up memory, end recieving thread, and close the ncurses window */
     end:
-        rsa_free(&r_key);
+        rsa_free(&rsa_key);
         ctr_done(&ctr);
         pthread_cancel(recv_msg_thr_id);
         endwin();
@@ -327,16 +343,16 @@ void win_reset (WINDOW * win) {
 }
 
 /* random string generator */
-void rand_string(unsigned char * srng, int len) {
+void gen_rand_str(unsigned char * rand_str, int len) {
     unsigned char char_array[84] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+-=,.<>/?;:";
     for (int i = 0; i < len; i++) {
-        srng[i] = char_array[(rand() % 84)];
+        rand_str[i] = char_array[(rand() % 84)];
     }
 }
 
 /* recieve messages from other client */
 void * recv_msg (void * data) {    
-    struct print_data * m_data = data;
+    struct func_data * m_data = data;
     symmetric_CTR ctr;
     unsigned char msg[MAX_LEN], enc_msg[MAX_LEN];
 	unsigned long msg_len = sizeof(msg);
