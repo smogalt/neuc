@@ -23,7 +23,7 @@
 #define SERVER_PORT 5544
 #define MAX_LEN 256
 
-struct func_data {
+struct recv_data {
     WINDOW * output_win;
     int socket_fd;
     unsigned char aes_key[32];
@@ -56,23 +56,23 @@ int main () {
     refresh();
 
     /* init window vars */
-    WINDOW *text_box;
-    WINDOW *messages;
+    WINDOW *input_win;
+    WINDOW *output_win;
     
     /* input options */
     keypad(stdscr, TRUE);
     cbreak();
     
     /* make window borders */
-    text_box = newwin(3, COLS, (LINES - 3), 0);
-    messages = newwin((LINES - 3), COLS, 0, 0);
+    input_win = newwin(3, COLS, (LINES - 3), 0);
+    output_win = newwin((LINES - 3), COLS, 0, 0);
     
     /* screen options */
-    scrollok(messages, TRUE);
+    scrollok(output_win, TRUE);
     
     /* reset boxes */
-    win_reset(text_box);
-    win_reset(messages);
+    win_reset(input_win);
+    win_reset(output_win);
     
     /* seed rand() */
     srand(time(NULL));
@@ -124,13 +124,13 @@ int main () {
     memset(&serv_addr, 0, sizeof(localhost_addr));
 
     /* get the server address and the connection key */
-    mvwprintw(text_box, 1, 1, "server ip: ");
-    wscanw(text_box, "%s", server_ip);
-    win_reset(text_box);
+    mvwprintw(input_win, 1, 1, "server ip: ");
+    wscanw(input_win, "%s", server_ip);
+    win_reset(input_win);
 
-    mvwprintw(text_box, 1, 1, "connection key: ");
-    wscanw(text_box, "%s", connection_key);
-    win_reset(text_box);
+    mvwprintw(input_win, 1, 1, "connection key: ");
+    wscanw(input_win, "%s", connection_key);
+    win_reset(input_win);
 
     sha256_process(&sha256, connection_key, strlen(connection_key));
     sha256_done(&sha256, connection_key);
@@ -158,15 +158,25 @@ int main () {
 	serv_addr.sin_port = htons(SERVER_PORT);
     inet_aton(server_ip, &serv_addr.sin_addr);
 
-    /* send server connection key */
-    sendto(socket_fd, (const char *) connection_key, strlen(connection_key), 
-        MSG_CONFIRM, (struct sockaddr *) &serv_addr, 
-            sizeof(serv_addr));
-    
-    /* wait for target information from server */
-    recvfrom(socket_fd, target_addr_buf, sizeof(target_addr_buf), 
-        MSG_WAITALL, NULL, 
-            NULL);
+    int counter = 0;
+    for (;;) {
+        if (!(counter % 100000))
+            /* send server connection key */
+            sendto(socket_fd, (const char *) connection_key, strlen(connection_key), 
+                MSG_CONFIRM, (struct sockaddr *) &serv_addr, 
+                    sizeof(serv_addr));
+
+        /* wait for target information from server */
+        recvfrom(socket_fd, target_addr_buf, sizeof(target_addr_buf), 
+            MSG_DONTWAIT, NULL, 
+                NULL);
+        
+        if (target_addr_buf[0] != NULL) {
+            break;
+        }
+        counter++;
+        sleep(0.00001);
+    }
     
     /* filling peer client information */
     struct sockaddr_in remote;
@@ -197,23 +207,23 @@ int main () {
         if (recvfrom(socket_fd, aes_key_enc, sizeof(aes_key_enc),
             MSG_WAITALL, NULL,
                 NULL) < 0)
-            print_msg(messages, "ERROR ON RECIEVING AES KEY", false);
+            print_msg(output_win, "ERROR ON RECIEVING AES KEY", false);
 		
 		/* recieve encrypted IV */
 		if (recvfrom(socket_fd, aes_IV_enc, sizeof(aes_IV_enc),
             MSG_WAITALL, NULL,
                 NULL) < 0)
-            print_msg(messages, "ERROR ON RECIEVING IV KEY", false);
+            print_msg(output_win, "ERROR ON RECIEVING IV KEY", false);
 
         /* decrypt AES key */
         if (rsa_decrypt_key (aes_key_enc, sizeof(aes_key_enc), aes_key, &aes_key_len, 
             "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
-            print_msg(messages, "ERROR ON DECRYPTING AES KEY", false);
+            print_msg(output_win, "ERROR ON DECRYPTING AES KEY", false);
         
 		/* decrypt IV */
         if (rsa_decrypt_key (aes_IV_enc, sizeof(aes_IV_enc), aes_IV, &aes_key_len, 
             "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
-            print_msg(messages, "ERROR ON DECRYPTING AES KEY", false);
+            print_msg(output_win, "ERROR ON DECRYPTING AES KEY", false);
     }
 
     if (role[0] == 'b') {
@@ -224,7 +234,7 @@ int main () {
         
         /* import RSA key */
         if (rsa_import(rsa_key_der, sizeof(rsa_key_der), &rsa_key) != CRYPT_OK)
-            print_msg(messages, "ERROR ON RSA IMPORT", false);
+            print_msg(output_win, "ERROR ON RSA IMPORT", false);
         
         /* generate random AES key and IV*/
         gen_rand_str(aes_key, 32);
@@ -233,11 +243,11 @@ int main () {
         /* encrypt AES key */
         if (rsa_encrypt_key(aes_key, sizeof(aes_key), aes_key_enc, &aes_key_enc_len, 
             "neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
-            print_msg(messages, "ERROR ON ENCRYPTING AES KEY", false);
+            print_msg(output_win, "ERROR ON ENCRYPTING AES KEY", false);
 
 		if (rsa_encrypt_key(aes_IV, sizeof(aes_IV), aes_IV_enc, &aes_key_enc_len,
 			"neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
-			print_msg(messages, "ERROR ON ENCRYPTING IV", false);
+			print_msg(output_win, "ERROR ON ENCRYPTING IV", false);
 
         /* send encrypted AES key back */
         sendto (socket_fd, aes_key_enc, sizeof(aes_key_enc), 
@@ -255,8 +265,8 @@ int main () {
 	ctr_start(find_cipher("aes"), aes_IV, aes_key, 32, 0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
 
     /* fill data for recv thread*/
-    struct func_data data;
-    data.output_win = messages;
+    struct recv_data data;
+    data.output_win = output_win;
     data.socket_fd = socket_fd;
     for (int i = 0; i < 32; i++) {
         data.aes_key[i] = aes_key[i];
@@ -264,8 +274,8 @@ int main () {
     }
 
     /* open second thread to receive data */
-    pthread_t recv_msg_thr_id;
-    pthread_create(&recv_msg_thr_id, NULL, recv_msg, &data);
+    pthread_t recv_msg_id;
+    pthread_create(&recv_msg_id, NULL, recv_msg, &data);
 
     /* intialize message buffers*/
     unsigned char input_buf[MAX_LEN];
@@ -274,13 +284,13 @@ int main () {
     /* loop to take input, check for commands, then send AES encrypted text*/
     for (;;) {
         /* get input */
-        mvwscanw(text_box, 1, 1, "%[^\n]", input_buf);
-        win_reset(text_box);
+        mvwscanw(input_win, 1, 1, "%[^\n]", input_buf);
+        win_reset(input_win);
 
         /* check for commands. all commands are predicated with a "!". not case sensitive */
         /* clears all messages on the screen */
         if (strcasecmp(input_buf, "!clear") == 0) {
-            win_reset(messages);
+            win_reset(output_win);
             memset(&input_buf, 0, sizeof(input_buf));
         }
 
@@ -298,7 +308,7 @@ int main () {
                     sizeof(remote));
             
             /* display outgoing message on the client */
-            print_msg(messages, input_buf, false);
+            print_msg(output_win, input_buf, false);
             
             /* reset buffers */
             memset(&input_buf, 0, sizeof(input_buf));
@@ -310,7 +320,7 @@ int main () {
     end:
         rsa_free(&rsa_key);
         ctr_done(&ctr);
-        pthread_cancel(recv_msg_thr_id);
+        pthread_cancel(recv_msg_id);
         endwin();
         return 0;
 }
@@ -322,7 +332,7 @@ int main () {
 void print_msg (WINDOW * win, char message[], bool sender) {
         switch (sender) {
             case true:
-                mvwprintw(win, 39, 2, "%lc%lc%lc %s\n", (wint_t)9472, (wint_t)9472, (wint_t)10148, message);
+                mvwprintw(win, 39, 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)10148, message);
                 break;
             
             case false:
@@ -352,7 +362,7 @@ void gen_rand_str(unsigned char * rand_str, int len) {
 
 /* recieve messages from other client */
 void * recv_msg (void * data) {    
-    struct func_data * m_data = data;
+    struct recv_data * m_data = data;
     symmetric_CTR ctr;
     unsigned char msg[MAX_LEN], enc_msg[MAX_LEN];
 	unsigned long msg_len = sizeof(msg);

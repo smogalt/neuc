@@ -75,14 +75,15 @@ int main () {
         *last_port = client_a.sin_port;
 
         /* wait for a packet that matches. will loop for 10 seconds */
-        for(int iter = 0; iter < 1000000; iter++) {
+        for(int iter = 0; iter < 100000; iter++) {
             /* receive potential matching packet */
             recvfrom(socket_fd, (char *) client_connection_key_b, 4097,
                 MSG_DONTWAIT, (struct sockaddr *) &client_b,
                     &client_b_len);
 
             /* compare their connection keys */
-            if (strcmp(client_connection_key_a, client_connection_key_b) == 0) {
+            if ((strcmp(client_connection_key_a, client_connection_key_b) == 0) && 
+                (memcmp(&client_a, &client_b, sizeof(client_a)) != 0)) {
                 /* if it matches send the client information */
                 sendto(socket_fd, buf, sizeof(buf),
                     0, (const struct sockaddr *) &client_b, 
@@ -106,7 +107,7 @@ int main () {
 
                 goto end;
             }
-            sleep(0.00001);
+            sleep(0.0001);
         }
         end:
     }
