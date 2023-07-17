@@ -9,12 +9,3 @@ To install you need libtomcrypt and tomsfastmath. These can be found on github a
 #### Using the Server
 
 The server runs on port 5544. Run using `neuc_server`.
-
-#### Development Timeline
-
-When time allows, I will be adding to and improving NEUC. The table below shows some features that I hope to be adding soon.
-
-| Priority | Networking                                                   | Encryption                          | Client                                                               | Code/Documentation                                 |
-| :------: | ------------------------------------------------------------ | ----------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
-|  Higher  | - Create a queue<br />system for requests.                   | - Hash connection<br />keys (done). | - Add a status bar.<br />- Disconnect function/multiple connections. | - Rename variables for more cohesive code (done).  |
-|  Lower  | - Ping the server<br />multiple times <br />instead of once. | - RSA-4098?                         | - Add color to the client.<br />- Chat logging <br />option.         | - Create a Man page.<br />- Make a Video tutorial. |

@@ -49,7 +49,19 @@ void * recv_msg (void * data);
 
 /*  | MAIN |  */
 /* \/     \/  */
-int main () {
+int main (int argc, char * argv[]) {
+    if (argc > 1) {
+        if (strcmp(argv[1], "-h") == 0) {
+            printf("usage: neuc_client [server IP] [connection key] \n");
+            goto help_end;
+        }
+
+        if (strcmp(argv[1], "--help") == 0) {
+            printf("usage: neuc_client [server IP] [connection key] \n");
+            goto help_end;
+        }
+    }
+
     /* ncurses initialization */
     setlocale(LC_ALL, "");
     initscr();
@@ -123,14 +135,22 @@ int main () {
     memset(&serv_addr, 0, sizeof(serv_addr));
     memset(&serv_addr, 0, sizeof(localhost_addr));
 
-    /* get the server address and the connection key */
-    mvwprintw(input_win, 1, 1, "server ip: ");
-    wscanw(input_win, "%s", server_ip);
-    win_reset(input_win);
+    if (argc > 1) {
+        strcpy(server_ip, argv[1]);
+    } else {
+        /* get the server address and the connection key */
+        mvwprintw(input_win, 1, 1, "server ip: ");
+        wscanw(input_win, "%s", server_ip);
+        win_reset(input_win);
+    }
 
-    mvwprintw(input_win, 1, 1, "connection key: ");
-    wscanw(input_win, "%s", connection_key);
-    win_reset(input_win);
+    if (argc > 2) {
+        strcpy(connection_key, argv[2]);
+    } else {
+        mvwprintw(input_win, 1, 1, "connection key: ");
+        wscanw(input_win, "%s", connection_key);
+        win_reset(input_win);
+    }
 
     sha256_process(&sha256, connection_key, strlen(connection_key));
     sha256_done(&sha256, connection_key);
@@ -171,7 +191,7 @@ int main () {
             MSG_DONTWAIT, NULL, 
                 NULL);
         
-        if (target_addr_buf[0] != NULL) {
+        if (memcmp(target_addr_buf, NULL, sizeof(target_addr_buf))) {
             break;
         }
         counter++;
@@ -322,6 +342,9 @@ int main () {
         ctr_done(&ctr);
         pthread_cancel(recv_msg_id);
         endwin();
+        return 0;
+    
+    help_end:
         return 0;
 }
 
