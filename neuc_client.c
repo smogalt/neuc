@@ -92,7 +92,7 @@ int main (int argc, char * argv[]) {
     /* init encryption vars */
     rsa_key rsa_key;
     symmetric_CTR ctr;
-    hash_state sha256;
+    hash_state sha512;
     int hash_idx, prng_idx, res;
     
     unsigned char rsa_key_der[270];
@@ -107,13 +107,13 @@ int main (int argc, char * argv[]) {
     /* register a math library (TomsFastMath)*/
     ltc_mp = tfm_desc;
     
-    register_hash(&sha256_desc);
-    hash_idx = find_hash("sha256");
+    register_hash(&sha512_desc);
+    hash_idx = find_hash("sha512");
     prng_idx = find_prng("sprng");
 	
     register_cipher(&aes_desc);
 
-    sha256_init(&sha256);
+    sha512_init(&sha512);
 
     /* generate port between 49152 and 65535 */
     int localhost_port = rand() % 16383 + 49152;
@@ -127,7 +127,7 @@ int main (int argc, char * argv[]) {
     last_port   = (uint16_t *) (last_addr + 1);
 
     /* initialize server info and connection key*/
-    char connection_key[MAX_LEN];
+    char connection_key[65];
     char server_ip[16];
     char role[1];
 	
@@ -152,8 +152,8 @@ int main (int argc, char * argv[]) {
         win_reset(input_win);
     }
 
-    sha256_process(&sha256, connection_key, strlen(connection_key));
-    sha256_done(&sha256, connection_key);
+    sha512_process(&sha512, connection_key, strlen(connection_key));
+    sha512_done(&sha512, connection_key);
 
     /* make socket */
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -191,7 +191,7 @@ int main (int argc, char * argv[]) {
             MSG_DONTWAIT, NULL, 
                 NULL);
         
-        if (memcmp(target_addr_buf, NULL, sizeof(target_addr_buf))) {
+        if (target_addr_buf[0] != NULL) {
             break;
         }
         counter++;
