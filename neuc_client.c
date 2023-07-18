@@ -21,6 +21,8 @@
 #include <locale.h>
 
 #define SERVER_PORT 5544
+#define INCOMING_CLR_PAIR 1
+#define OUTGOING_CLR_PAIR 2
 #define MAX_LEN 256
 
 struct recv_data {
@@ -65,7 +67,12 @@ int main (int argc, char * argv[]) {
     /* ncurses initialization */
     setlocale(LC_ALL, "");
     initscr();
+    start_color();
     refresh();
+
+    /* init color pairs */
+    init_pair(INCOMING_CLR_PAIR, COLOR_MAGENTA, COLOR_BLACK);
+    init_pair(OUTGOING_CLR_PAIR, COLOR_GREEN, COLOR_BLACK);
 
     /* init window vars */
     WINDOW *input_win;
@@ -355,11 +362,15 @@ int main (int argc, char * argv[]) {
 void print_msg (WINDOW * win, char message[], bool sender) {
         switch (sender) {
             case true:
-                mvwprintw(win, 39, 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)10148, message);
+                wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+                mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)10148, message);
+                wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
                 break;
             
             case false:
-                mvwprintw(win, 39, 2, "%lc %s\n", (wint_t)10148, message);
+                wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
+                mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)10148, message);
+                wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
                 break;
         }
         
