@@ -127,7 +127,7 @@ int main (int argc, char * argv[]) {
     last_port   = (uint16_t *) (last_addr + 1);
 
     /* initialize server info and connection key*/
-    char connection_key[65];
+    char connection_key[64];
     char server_ip[16];
     char role[1];
 	
@@ -182,7 +182,7 @@ int main (int argc, char * argv[]) {
     for (;;) {
         if (!(counter % 100000))
             /* send server connection key */
-            sendto(socket_fd, (const char *) connection_key, strlen(connection_key), 
+            sendto(socket_fd, (const char *) connection_key, sizeof(connection_key), 
                 MSG_CONFIRM, (struct sockaddr *) &serv_addr, 
                     sizeof(serv_addr));
 
