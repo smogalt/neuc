@@ -27,6 +27,8 @@
 
 struct recv_data {
     WINDOW * output_win;
+    WINDOW * status_win;
+    WINDOW * input_win;
     int socket_fd;
     unsigned char aes_key[32];
 	unsigned char aes_IV[32];
@@ -41,6 +43,9 @@ void win_reset (WINDOW * win);
 
 /* print formatted message */
 void print_msg (WINDOW * win, char message[], bool sender);
+
+/* print dingbats in the little status window*/
+void status_change (WINDOW * win, int state);
 
 /* random string generator */
 void gen_rand_str (unsigned char * rand_str, int len);
@@ -75,16 +80,16 @@ int main (int argc, char * argv[]) {
     init_pair(OUTGOING_CLR_PAIR, COLOR_GREEN, COLOR_BLACK);
 
     /* init window vars */
-    WINDOW *input_win;
-    WINDOW *output_win;
+    WINDOW * input_win, * output_win, * status_win;
     
     /* input options */
     keypad(stdscr, TRUE);
     cbreak();
     
     /* make window borders */
-    input_win = newwin(3, COLS, (LINES - 3), 0);
+    input_win = newwin(3, COLS - 5, (LINES - 3), 0);
     output_win = newwin((LINES - 3), COLS, 0, 0);
+    status_win = newwin(3, 5, (LINES - 3), (COLS - 5));
     
     /* screen options */
     scrollok(output_win, TRUE);
@@ -92,6 +97,7 @@ int main (int argc, char * argv[]) {
     /* reset boxes */
     win_reset(input_win);
     win_reset(output_win);
+    win_reset(status_win);
     
     /* seed rand() */
     srand(time(NULL));
@@ -142,6 +148,8 @@ int main (int argc, char * argv[]) {
     memset(&serv_addr, 0, sizeof(serv_addr));
     memset(&serv_addr, 0, sizeof(localhost_addr));
 
+    status_change(status_win, 6);
+
     if (argc > 1) {
         strcpy(server_ip, argv[1]);
     } else {
@@ -158,6 +166,8 @@ int main (int argc, char * argv[]) {
         wscanw(input_win, "%s", connection_key);
         win_reset(input_win);
     }
+
+    curs_set(0);
 
     sha512_process(&sha512, connection_key, strlen(connection_key));
     sha512_done(&sha512, connection_key);
@@ -186,12 +196,18 @@ int main (int argc, char * argv[]) {
     inet_aton(server_ip, &serv_addr.sin_addr);
 
     int counter = 0;
+    int status_counter = 0;
     for (;;) {
-        if (!(counter % 100000))
+        if (!(counter % 38462))
             /* send server connection key */
             sendto(socket_fd, (const char *) connection_key, sizeof(connection_key), 
-                MSG_CONFIRM, (struct sockaddr *) &serv_addr, 
+                NULL, (struct sockaddr *) &serv_addr, 
                     sizeof(serv_addr));
+
+        if (!(counter % 11538)) {
+            status_change(status_win, ((status_counter % 4)+ 1));
+            status_counter++;
+        }
 
         /* wait for target information from server */
         recvfrom(socket_fd, target_addr_buf, sizeof(target_addr_buf), 
@@ -227,7 +243,7 @@ int main (int argc, char * argv[]) {
 
         /* send exported key */
         sendto (socket_fd, rsa_key_der, sizeof(rsa_key_der), 
-            MSG_CONFIRM, (struct sockaddr *) &remote, 
+            NULL, (struct sockaddr *) &remote, 
                 sizeof(remote));
         
         /* recieve encrypted AES key */
@@ -294,6 +310,8 @@ int main (int argc, char * argv[]) {
     /* fill data for recv thread*/
     struct recv_data data;
     data.output_win = output_win;
+    data.status_win = status_win;
+    data.input_win = input_win;
     data.socket_fd = socket_fd;
     for (int i = 0; i < 32; i++) {
         data.aes_key[i] = aes_key[i];
@@ -307,6 +325,9 @@ int main (int argc, char * argv[]) {
     /* intialize message buffers*/
     unsigned char input_buf[MAX_LEN];
     unsigned char enc_msg[MAX_LEN];
+
+    status_change(status_win, 0);
+    curs_set(1);
 
     /* loop to take input, check for commands, then send AES encrypted text*/
     for (;;) {
@@ -323,6 +344,9 @@ int main (int argc, char * argv[]) {
 
         /* exits program */
         if (strcasecmp(input_buf, "!exit") == 0) {
+            sendto(socket_fd, "DISCONNECT", 10, 
+                NULL, (struct sockaddr *) &remote, 
+                    sizeof(remote));
             goto end;
         }
 
@@ -331,12 +355,12 @@ int main (int argc, char * argv[]) {
 
             /* send encrypted text */
             sendto(socket_fd, enc_msg, sizeof(enc_msg), 
-                MSG_CONFIRM, (struct sockaddr *) &remote, 
+                NULL, (struct sockaddr *) &remote, 
                     sizeof(remote));
             
             /* display outgoing message on the client */
             print_msg(output_win, input_buf, false);
-            
+
             /* reset buffers */
             memset(&input_buf, 0, sizeof(input_buf));
             memset(&enc_msg, 0, sizeof(enc_msg));
@@ -360,23 +384,27 @@ int main (int argc, char * argv[]) {
 
 /* print message in specified window */
 void print_msg (WINDOW * win, char message[], bool sender) {
+        curs_set(0);
         switch (sender) {
             case true:
                 wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
-                mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)10148, message);
+                mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)9658, message);
                 wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
                 break;
             
             case false:
                 wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
-                mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)10148, message);
+                mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)9658, message);
                 wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
                 break;
         }
         
         wscrl(win, 1);
         box(win, 0, 0);
+        move(LINES - 2, 1);
+        curs_set(1);
         wrefresh(win);
+        refresh();
 }
 
 /* clear and redraw window */
@@ -384,6 +412,50 @@ void win_reset (WINDOW * win) {
     werase(win);
     box(win, 0, 0);
     wrefresh(win);
+}
+
+void status_change (WINDOW * win, int state) {
+    curs_set(0);
+    switch (state) {
+        case 0:
+            wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
+            mvwprintw(win, 1, 2, "%lc", (wint_t)10004);
+            wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
+            wrefresh(win);
+            break;
+        case 1:
+            mvwprintw(win, 1, 2, "%lc", (wint_t)9680);
+            wrefresh(win);
+            break;
+        case 2:
+            mvwprintw(win, 1, 2, "%lc", (wint_t)9682);
+            wrefresh(win);
+            break;
+        case 3:
+            mvwprintw(win, 1, 2, "%lc", (wint_t)9681);
+            wrefresh(win);
+            break;
+        case 4:
+            mvwprintw(win, 1, 2, "%lc", (wint_t)9683);
+            wrefresh(win);
+            break;
+        case 5:
+            wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+            mvwprintw(win, 1, 2, "%lc", (wint_t)10006);
+            wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+            wrefresh(win);
+            move(LINES - 2, 1);
+            curs_set(1);
+            refresh();
+            break;
+        case 6:
+            mvwprintw(win, 1, 2, "%lc", (wint_t)9673);
+            wrefresh(win);
+            move(LINES - 2, 1);
+            curs_set(1);
+            refresh();
+            break;
+    }
 }
 
 /* random string generator */
@@ -409,10 +481,14 @@ void * recv_msg (void * data) {
             MSG_WAITALL, NULL,
                 NULL);
 
-        ctr_decrypt(enc_msg, msg, sizeof(msg), &ctr);
+        if (strcasecmp(enc_msg, "DISCONNECT") == 0) {
+            status_change(m_data->status_win, 5);
+        } else {
+            ctr_decrypt(enc_msg, msg, sizeof(msg), &ctr);
 
-        print_msg(m_data->output_win, msg, true);
-        
+            print_msg(m_data->output_win, msg, true);
+        }
+
         memset(&msg, 0, sizeof(msg));
         memset(&enc_msg, 0, sizeof(enc_msg));
     }
