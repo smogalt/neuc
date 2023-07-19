@@ -11,7 +11,7 @@
 
 #define PORT 5544
 
-int main () {
+int main (void) {
     printf("starting...\n");
     
     /* initialize variables */
@@ -56,6 +56,7 @@ int main () {
     printf("ready\n");
 
     for(;;) {
+        start:
         /* reset client information */
         memset(&client_a, 0, sizeof(client_a));
         memset(&client_b, 0, sizeof(client_a));
@@ -105,11 +106,9 @@ int main () {
                     0, (const struct sockaddr *) &client_b, 
                         client_b_len);
 
-                goto end;
+                goto start;
             }
-            sleep(0.0001);
+            sleep((unsigned int) 0.01);
         }
-        end:
     }
-    return 0;
 }

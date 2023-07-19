@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <assert.h>
+#include <curses.h>
 #include <netdb.h>
 #include <netinet/ip.h>
 #include <stdint.h>
@@ -60,12 +61,12 @@ int main (int argc, char * argv[]) {
     if (argc > 1) {
         if (strcmp(argv[1], "-h") == 0) {
             printf("usage: neuc_client [server IP] [connection key] \n");
-            goto help_end;
+            return 0;
         }
 
         if (strcmp(argv[1], "--help") == 0) {
             printf("usage: neuc_client [server IP] [connection key] \n");
-            goto help_end;
+            return 0;
         }
     }
 
@@ -169,8 +170,8 @@ int main (int argc, char * argv[]) {
 
     curs_set(0);
 
-    sha512_process(&sha512, connection_key, strlen(connection_key));
-    sha512_done(&sha512, connection_key);
+    sha512_process(&sha512, (unsigned char *) connection_key, strlen(connection_key));
+    sha512_done(&sha512, (unsigned char *) connection_key);
 
     /* make socket */
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -198,13 +199,13 @@ int main (int argc, char * argv[]) {
     int counter = 0;
     int status_counter = 0;
     for (;;) {
-        if (!(counter % 38462))
+        if (!(counter % 90000))
             /* send server connection key */
             sendto(socket_fd, (const char *) connection_key, sizeof(connection_key), 
-                NULL, (struct sockaddr *) &serv_addr, 
+                0, (struct sockaddr *) &serv_addr, 
                     sizeof(serv_addr));
 
-        if (!(counter % 11538)) {
+        if (!(counter % 7500)) {
             status_change(status_win, ((status_counter % 4)+ 1));
             status_counter++;
         }
@@ -214,11 +215,11 @@ int main (int argc, char * argv[]) {
             MSG_DONTWAIT, NULL, 
                 NULL);
         
-        if (target_addr_buf[0] != NULL) {
+        if (target_addr_buf[0] != '\0') {
             break;
         }
         counter++;
-        sleep(0.00001);
+        sleep((unsigned int) 0.001);
     }
     
     /* filling peer client information */
@@ -243,30 +244,28 @@ int main (int argc, char * argv[]) {
 
         /* send exported key */
         sendto (socket_fd, rsa_key_der, sizeof(rsa_key_der), 
-            NULL, (struct sockaddr *) &remote, 
+            0, (struct sockaddr *) &remote, 
                 sizeof(remote));
         
         /* recieve encrypted AES key */
-        if (recvfrom(socket_fd, aes_key_enc, sizeof(aes_key_enc),
+        recvfrom(socket_fd, aes_key_enc, sizeof(aes_key_enc),
             MSG_WAITALL, NULL,
-                NULL) < 0)
-            print_msg(output_win, "ERROR ON RECIEVING AES KEY", false);
+                NULL);
 		
 		/* recieve encrypted IV */
-		if (recvfrom(socket_fd, aes_IV_enc, sizeof(aes_IV_enc),
+		recvfrom(socket_fd, aes_IV_enc, sizeof(aes_IV_enc),
             MSG_WAITALL, NULL,
-                NULL) < 0)
-            print_msg(output_win, "ERROR ON RECIEVING IV KEY", false);
+                NULL);
 
         /* decrypt AES key */
         if (rsa_decrypt_key (aes_key_enc, sizeof(aes_key_enc), aes_key, &aes_key_len, 
-            "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
-            print_msg(output_win, "ERROR ON DECRYPTING AES KEY", false);
+            (const unsigned char *) "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
+            print_msg(output_win, "error decrypting AES key", false);
         
 		/* decrypt IV */
         if (rsa_decrypt_key (aes_IV_enc, sizeof(aes_IV_enc), aes_IV, &aes_key_len, 
-            "neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
-            print_msg(output_win, "ERROR ON DECRYPTING AES KEY", false);
+            (const unsigned char *)"neuc", 4, hash_idx, &res, &rsa_key) != CRYPT_OK)
+            print_msg(output_win, "error decrypting AES IV", false);
     }
 
     if (role[0] == 'b') {
@@ -277,7 +276,7 @@ int main (int argc, char * argv[]) {
         
         /* import RSA key */
         if (rsa_import(rsa_key_der, sizeof(rsa_key_der), &rsa_key) != CRYPT_OK)
-            print_msg(output_win, "ERROR ON RSA IMPORT", false);
+            print_msg(output_win, "error importing RSA key", false);
         
         /* generate random AES key and IV*/
         gen_rand_str(aes_key, 32);
@@ -285,12 +284,12 @@ int main (int argc, char * argv[]) {
         
         /* encrypt AES key */
         if (rsa_encrypt_key(aes_key, sizeof(aes_key), aes_key_enc, &aes_key_enc_len, 
-            "neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
-            print_msg(output_win, "ERROR ON ENCRYPTING AES KEY", false);
+            (const unsigned char *) "neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
+            print_msg(output_win, "error encrypting AES key", false);
 
 		if (rsa_encrypt_key(aes_IV, sizeof(aes_IV), aes_IV_enc, &aes_key_enc_len,
-			"neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
-			print_msg(output_win, "ERROR ON ENCRYPTING IV", false);
+			(const unsigned char *) "neuc", 4, NULL, prng_idx, hash_idx, &rsa_key) != CRYPT_OK)
+			print_msg(output_win, "error encrypting AES IV", false);
 
         /* send encrypted AES key back */
         sendto (socket_fd, aes_key_enc, sizeof(aes_key_enc), 
@@ -305,7 +304,8 @@ int main (int argc, char * argv[]) {
     }
 
     /* initialize AES key */
-	ctr_start(find_cipher("aes"), aes_IV, aes_key, 32, 0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
+	ctr_start(find_cipher("aes"), aes_IV, aes_key, 32, 
+        0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
 
     /* fill data for recv thread*/
     struct recv_data data;
@@ -327,7 +327,6 @@ int main (int argc, char * argv[]) {
     unsigned char enc_msg[MAX_LEN];
 
     status_change(status_win, 0);
-    curs_set(1);
 
     /* loop to take input, check for commands, then send AES encrypted text*/
     for (;;) {
@@ -337,29 +336,29 @@ int main (int argc, char * argv[]) {
 
         /* check for commands. all commands are predicated with a "!". not case sensitive */
         /* clears all messages on the screen */
-        if (strcasecmp(input_buf, "!clear") == 0) {
+        if (strcasecmp((const char *) input_buf, "!clear") == 0) {
             win_reset(output_win);
             memset(&input_buf, 0, sizeof(input_buf));
         }
 
         /* exits program */
-        if (strcasecmp(input_buf, "!exit") == 0) {
+        if (strcasecmp((const char *) input_buf, "!exit") == 0) {
             sendto(socket_fd, "DISCONNECT", 10, 
-                NULL, (struct sockaddr *) &remote, 
+                0, (struct sockaddr *) &remote, 
                     sizeof(remote));
             goto end;
         }
 
-        if (strlen(input_buf) != 0) {            
+        if (strlen((const char *) input_buf) != 0) {            
             ctr_encrypt(input_buf, enc_msg, sizeof(input_buf), &ctr);
 
             /* send encrypted text */
             sendto(socket_fd, enc_msg, sizeof(enc_msg), 
-                NULL, (struct sockaddr *) &remote, 
+                0, (struct sockaddr *) &remote, 
                     sizeof(remote));
             
             /* display outgoing message on the client */
-            print_msg(output_win, input_buf, false);
+            print_msg(output_win, (char *) input_buf, false);
 
             /* reset buffers */
             memset(&input_buf, 0, sizeof(input_buf));
@@ -374,9 +373,6 @@ int main (int argc, char * argv[]) {
         pthread_cancel(recv_msg_id);
         endwin();
         return 0;
-    
-    help_end:
-        return 0;
 }
 
 /*  | FUNCTIONS | */
@@ -385,24 +381,23 @@ int main (int argc, char * argv[]) {
 /* print message in specified window */
 void print_msg (WINDOW * win, char message[], bool sender) {
         curs_set(0);
-        switch (sender) {
-            case true:
-                wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
-                mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)9658, message);
-                wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
-                break;
-            
-            case false:
-                wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
-                mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)9658, message);
-                wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
-                break;
+
+        if (sender) {
+            wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+            mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)9658, message);
+            wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+        } else {
+            wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
+            mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)9658, message);
+            wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
         }
         
         wscrl(win, 1);
         box(win, 0, 0);
+
         move(LINES - 2, 1);
         curs_set(1);
+
         wrefresh(win);
         refresh();
 }
@@ -421,7 +416,11 @@ void status_change (WINDOW * win, int state) {
             wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
             mvwprintw(win, 1, 2, "%lc", (wint_t)10004);
             wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
+            
             wrefresh(win);
+            move(LINES - 2, 1);
+            curs_set(1);
+            refresh();
             break;
         case 1:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9680);
@@ -443,6 +442,7 @@ void status_change (WINDOW * win, int state) {
             wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
             mvwprintw(win, 1, 2, "%lc", (wint_t)10006);
             wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+            
             wrefresh(win);
             move(LINES - 2, 1);
             curs_set(1);
@@ -481,12 +481,12 @@ void * recv_msg (void * data) {
             MSG_WAITALL, NULL,
                 NULL);
 
-        if (strcasecmp(enc_msg, "DISCONNECT") == 0) {
+        if (strcasecmp((const char *) enc_msg, "DISCONNECT") == 0) {
             status_change(m_data->status_win, 5);
         } else {
             ctr_decrypt(enc_msg, msg, sizeof(msg), &ctr);
 
-            print_msg(m_data->output_win, msg, true);
+            print_msg(m_data->output_win, (char *) msg, true);
         }
 
         memset(&msg, 0, sizeof(msg));
