@@ -30,6 +30,7 @@ struct recv_data {
     WINDOW * output_win;
     WINDOW * status_win;
     WINDOW * input_win;
+    bool exit_state;
     int socket_fd;
     unsigned char aes_key[32];
 	unsigned char aes_IV[32];
@@ -130,7 +131,7 @@ int main (int argc, char * argv[]) {
     sha512_init(&sha512);
 
     /* generate port between 49152 and 65535 */
-    int localhost_port = rand() % 16383 + 49152;
+    int local_host_port = rand() % 16383 + 49152;
 
     /* variables to hold client data from server */
     uint32_t * last_addr;
@@ -145,9 +146,9 @@ int main (int argc, char * argv[]) {
     char server_ip[16];
     char role[1];
 	
-    struct sockaddr_in serv_addr, localhost_addr;
+    struct sockaddr_in serv_addr, local_host_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
-    memset(&serv_addr, 0, sizeof(localhost_addr));
+    memset(&serv_addr, 0, sizeof(local_host_addr));
 
     status_change(status_win, 6);
 
@@ -182,14 +183,14 @@ int main (int argc, char * argv[]) {
     }
 
     /* bind socket and check to see if port is avaliable */
-    while (bind(socket_fd, (struct sockaddr *) &localhost_addr, sizeof(localhost_addr)) < 0) {
-        localhost_port = rand() % 16383 + 49152;
-        localhost_addr.sin_port = htons(localhost_port);
+    while (bind(socket_fd, (struct sockaddr *) &local_host_addr, sizeof(local_host_addr)) < 0) {
+        local_host_port = rand() % 16383 + 49152;
+        local_host_addr.sin_port = htons(local_host_port);
     };
 
-    /* filling localhost info */
-    localhost_addr.sin_family = AF_INET;
-    localhost_addr.sin_port = htons(localhost_port);
+    /* filling local_host info */
+    local_host_addr.sin_family = AF_INET;
+    local_host_addr.sin_port = htons(local_host_port);
 
     /* filling server info */
     serv_addr.sin_family = AF_INET;
@@ -223,10 +224,10 @@ int main (int argc, char * argv[]) {
     }
     
     /* filling peer client information */
-    struct sockaddr_in remote;
-    remote.sin_family       = AF_INET;
-    remote.sin_addr.s_addr  = *last_addr;
-    remote.sin_port         = *last_port;
+    struct sockaddr_in remote_host;
+    remote_host.sin_family       = AF_INET;
+    remote_host.sin_addr.s_addr  = *last_addr;
+    remote_host.sin_port         = *last_port;
 
     /* recieve a role from the server */
     recvfrom(socket_fd, role, sizeof(role),
@@ -244,8 +245,8 @@ int main (int argc, char * argv[]) {
 
         /* send exported key */
         sendto (socket_fd, rsa_key_der, sizeof(rsa_key_der), 
-            0, (struct sockaddr *) &remote, 
-                sizeof(remote));
+            0, (struct sockaddr *) &remote_host, 
+                sizeof(remote_host));
         
         /* recieve encrypted AES key */
         recvfrom(socket_fd, aes_key_enc, sizeof(aes_key_enc),
@@ -293,13 +294,13 @@ int main (int argc, char * argv[]) {
 
         /* send encrypted AES key back */
         sendto (socket_fd, aes_key_enc, sizeof(aes_key_enc), 
-            MSG_CONFIRM, (struct sockaddr *) &remote, 
-                sizeof(remote));
+            MSG_CONFIRM, (struct sockaddr *) &remote_host, 
+                sizeof(remote_host));
         
 		/* send encrypt IV back */
 		sendto (socket_fd, aes_IV_enc, sizeof(aes_IV_enc), 
-            MSG_CONFIRM, (struct sockaddr *) &remote, 
-                sizeof(remote));
+            MSG_CONFIRM, (struct sockaddr *) &remote_host, 
+                sizeof(remote_host));
 		
     }
 
@@ -312,7 +313,9 @@ int main (int argc, char * argv[]) {
     data.output_win = output_win;
     data.status_win = status_win;
     data.input_win = input_win;
+    
     data.socket_fd = socket_fd;
+    data.exit_state = false;
     for (int i = 0; i < 32; i++) {
         data.aes_key[i] = aes_key[i];
 		data.aes_IV[i] = aes_IV[i];
@@ -344,8 +347,8 @@ int main (int argc, char * argv[]) {
         /* exits program */
         if (strcasecmp((const char *) input_buf, "!exit") == 0) {
             sendto(socket_fd, "DISCONNECT", 10, 
-                0, (struct sockaddr *) &remote, 
-                    sizeof(remote));
+                0, (struct sockaddr *) &remote_host, 
+                    sizeof(remote_host));
             goto end;
         }
 
@@ -354,8 +357,8 @@ int main (int argc, char * argv[]) {
 
             /* send encrypted text */
             sendto(socket_fd, enc_msg, sizeof(enc_msg), 
-                0, (struct sockaddr *) &remote, 
-                    sizeof(remote));
+                0, (struct sockaddr *) &remote_host, 
+                    sizeof(remote_host));
             
             /* display outgoing message on the client */
             print_msg(output_win, (char *) input_buf, false);
@@ -416,46 +419,40 @@ void status_change (WINDOW * win, int state) {
             wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
             mvwprintw(win, 1, 2, "%lc", (wint_t)10004);
             wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
-            
-            wrefresh(win);
-            move(LINES - 2, 1);
-            curs_set(1);
-            refresh();
             break;
+
         case 1:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9680);
-            wrefresh(win);
             break;
+
         case 2:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9682);
-            wrefresh(win);
             break;
+
         case 3:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9681);
-            wrefresh(win);
             break;
+
         case 4:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9683);
-            wrefresh(win);
             break;
+    
         case 5:
             wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
             mvwprintw(win, 1, 2, "%lc", (wint_t)10006);
             wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
-            
-            wrefresh(win);
-            move(LINES - 2, 1);
-            curs_set(1);
-            refresh();
             break;
+            
         case 6:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9673);
-            wrefresh(win);
-            move(LINES - 2, 1);
-            curs_set(1);
-            refresh();
             break;
     }
+
+    wrefresh(win);
+    move(LINES - 2, 1);
+    curs_set(1);
+    refresh();
+    return;
 }
 
 /* random string generator */
@@ -464,6 +461,10 @@ void gen_rand_str(unsigned char * rand_str, int len) {
     for (int i = 0; i < len; i++) {
         rand_str[i] = char_array[(rand() % 84)];
     }
+    
+    memset(rand_str, 0, sizeof(*rand_str));
+    memset(&len, 0, sizeof(len));
+    return;
 }
 
 /* recieve messages from other client */
@@ -473,7 +474,8 @@ void * recv_msg (void * data) {
     unsigned char msg[MAX_LEN], enc_msg[MAX_LEN];
 	unsigned long msg_len = sizeof(msg);
 
-	ctr_start(find_cipher("aes"), m_data->aes_IV, m_data->aes_key, 32, 0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
+	ctr_start(find_cipher("aes"), m_data->aes_IV, m_data->aes_key, 
+    32, 0, CTR_COUNTER_LITTLE_ENDIAN, &ctr);
 	ctr_setiv(m_data->aes_IV, 32, &ctr);
 
     for (;;) {
@@ -492,4 +494,5 @@ void * recv_msg (void * data) {
         memset(&msg, 0, sizeof(msg));
         memset(&enc_msg, 0, sizeof(enc_msg));
     }
+    return 0;
 }
