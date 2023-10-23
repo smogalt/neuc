@@ -120,7 +120,7 @@ int main (int argc, char * argv[]) {
     register_prng(&sprng_desc);
     
     /* register a math library (TomsFastMath)*/
-    ltc_mp = tfm_desc;
+    ltc_mp = ltm_desc;
     
     register_hash(&sha512_desc);
     hash_idx = find_hash("sha512");
