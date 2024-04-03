@@ -110,10 +110,10 @@ int main (int argc, char * argv[]) {
     hash_state sha512;
     int hash_idx, prng_idx, res;
     
-    unsigned char rsa_key_der[270];
+    unsigned char rsa_key_der[526];
     unsigned long rsa_key_der_len = sizeof(rsa_key_der);
     
-    unsigned char aes_key[32], aes_key_enc[256], aes_IV[32], aes_IV_enc[256];
+    unsigned char aes_key[32], aes_key_enc[512], aes_IV[32], aes_IV_enc[512];
     unsigned long aes_key_len = sizeof(aes_key), aes_key_enc_len = sizeof(aes_key_enc);
 
     /* init TFM variables */
@@ -238,7 +238,7 @@ int main (int argc, char * argv[]) {
     client with the 'b' role that makes an AES key, then encrypts it and sends it back*/
     if (role[0] == 'a') {
         /* make a 2048 bit RSA key */
-        rsa_make_key(NULL, prng_idx, 2048/8, 65537, &rsa_key); 
+        rsa_make_key(NULL, prng_idx, 4096/8, 65537, &rsa_key); 
 
         /* export key */
         rsa_export(rsa_key_der, &rsa_key_der_len, PK_PUBLIC, &rsa_key);
