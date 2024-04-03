@@ -119,7 +119,7 @@ int main (int argc, char * argv[]) {
     /* init TFM variables */
     register_prng(&sprng_desc);
     
-    /* register a math library (TomsFastMath)*/
+    /* register a math library (LibTomMath)*/
     ltc_mp = ltm_desc;
     
     register_hash(&sha512_desc);
