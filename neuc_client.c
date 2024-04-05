@@ -233,6 +233,8 @@ int main (int argc, char * argv[]) {
     recvfrom(socket_fd, role, sizeof(role),
         MSG_WAITALL, NULL,
             NULL);
+    
+    status_change(status_win, 7);
 
     /* role 'a' makes a RSA key, then sends the public key to the other 
     client with the 'b' role that makes an AES key, then encrypts it and sends it back*/
@@ -387,20 +389,17 @@ void print_msg (WINDOW * win, char message[], bool sender) {
 
         if (sender) {
             wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
-            mvwprintw(win, (LINES - 4), 2, "%lc%lc%lc %s\n", (wint_t)9548, (wint_t)9548, (wint_t)9658, message);
+            mvwprintw(win, (LINES - 4), 0, " %lc%lc %s\n", (wint_t)9472, (wint_t)10148, message);
             wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
         } else {
             wattron(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
-            mvwprintw(win, (LINES - 4), 2, "%lc %s\n", (wint_t)9658, message);
+            mvwprintw(win, (LINES - 4), 0, " %lc%lc %s\n", (wint_t)9548, (wint_t)10148, message);
             wattroff(win, COLOR_PAIR(OUTGOING_CLR_PAIR));
         }
-        
-        wscrl(win, 1);
-        box(win, 0, 0);
-
         move(LINES - 2, 1);
         curs_set(1);
 
+        box(win, 0, 0);
         wrefresh(win);
         refresh();
 }
@@ -445,6 +444,12 @@ void status_change (WINDOW * win, int state) {
             
         case 6:
             mvwprintw(win, 1, 2, "%lc", (wint_t)9673);
+            break;
+        
+        case 7:
+            wattron(win, COLOR_PAIR(INCOMING_CLR_PAIR));
+            mvwprintw(win, 1, 2, "%lc", (wint_t)8986);
+            wattroff(win, COLOR_PAIR(INCOMING_CLR_PAIR));
             break;
     }
 
